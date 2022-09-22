@@ -1,0 +1,60 @@
+name: Trigger auto deployment for album-frontend
+
+# When this action will be executed
+on:
+  # Automatically trigger it when detected changes in repo
+  push:
+    branches: 
+      [ main ]
+    paths:
+    - '**'
+    - '.github/workflows/album-frontend-AutoDeployTrigger-9397bbbd-1af4-45e8-bda3-7599edcd5aac.yml'
+
+  # Allow mannually trigger 
+  workflow_dispatch:      
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout to the branch
+        uses: actions/checkout@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+
+      - name: Log in to container registry
+        uses: docker/login-action@v1
+        with:
+          registry: ca081e1524c0acr.azurecr.io
+          username: ${{ secrets.ALBUMFRONTEND_REGISTRY_USERNAME }}
+          password: ${{ secrets.ALBUMFRONTEND_REGISTRY_PASSWORD }}
+
+      - name: Build and push container image to registry
+        uses: docker/build-push-action@v2
+        with:
+          push: true
+          tags: ca081e1524c0acr.azurecr.io/album-frontend:${{ github.sha }}
+          file: ./Dockerfile
+          context: ./
+
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    
+    steps:
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.ALBUMFRONTEND_AZURE_CREDENTIALS }}
+
+
+      - name: Deploy to containerapp
+        uses: azure/CLI@v1
+        with:
+          inlineScript: |
+            az config set extension.use_dynamic_install=yes_without_prompt
+            az containerapp registry set -n album-frontend -g eneros_rg_9865 --server ca081e1524c0acr.azurecr.io --username  ${{ secrets.ALBUMFRONTEND_REGISTRY_USERNAME }} --password ${{ secrets.ALBUMFRONTEND_REGISTRY_PASSWORD }}
+            az containerapp update -n album-frontend -g eneros_rg_9865 --image ca081e1524c0acr.azurecr.io/album-frontend:${{ github.sha }}
